@@ -1,79 +1,198 @@
-# Game Host Daemon
+# ⚙️ GameServerManager – Daemon (Rust)
 
-Rust daemon for managing Docker containers on a single Linux host. The backend talks only to this daemon over an authenticated HTTP API; the daemon is the only component that touches Docker.
+Lightweight **Rust-based execution agent (daemon)** for GameServerManager responsible for handling **local runtime operations, server execution control, and backend-to-host communication**.
 
-## Features
+This component acts as the **bridge between the orchestration backend and the actual machine running game servers**.
 
-- Bearer-token authentication on every endpoint
-- Container lifecycle management via Docker
-- Persisted `server_id -> container_id` mapping for restart recovery
-- Startup reconciliation that removes orphaned managed containers
-- Backend-compatible API contract for the GSM control plane
-- Structured logging with `tracing`
+---
 
-## Environment
+## 🧠 Role of the Daemon
 
-- `DAEMON_BIND_ADDR` - HTTP bind address, default `0.0.0.0:8080`
-- `DAEMON_API_TOKEN` - required shared API token
-- `DAEMON_STATE_FILE` - path for persisted state, default `/var/lib/game-host-daemon/state.json`
-- `DAEMON_DEFAULT_IMAGE` - default image used for backend-issued create requests
-- `DAEMON_MINECRAFT_IMAGE` - image used for Minecraft servers, default `itzg/minecraft-server:latest`
-- `DAEMON_RUST_IMAGE` - image used for Rust servers, default `ipajudd/rustgs:latest`
-- `DAEMON_HYTALE_IMAGE` - image used for Hytale servers, defaults to `DAEMON_DEFAULT_IMAGE`
-- `DAEMON_BASE_VOLUME_DIR` - host directory under which per-server volumes are created
-- `DAEMON_DEFAULT_WORKING_DIR` - container working directory mount target
-- `DAEMON_DEFAULT_INTERNAL_PORT` - container port mapped to the allocated host port
-- `DAEMON_DEFAULT_START_COMMAND` - whitespace-delimited default command for created containers
-- `DAEMON_HYTALE_INTERNAL_PORT` - container port used by the Hytale preset, defaults to `DAEMON_DEFAULT_INTERNAL_PORT`
-- `DAEMON_HYTALE_START_COMMAND` - command used by the Hytale preset, defaults to `DAEMON_DEFAULT_START_COMMAND`
+The daemon is a **local execution layer** that runs on the host machine where game servers are deployed.
 
-## API
+It is responsible for:
 
-All requests require:
+* ▶ Executing server start/stop commands issued by the backend
+* 🐳 Interacting with Docker runtime (directly or via backend instructions)
+* 📡 Streaming logs and runtime output back to backend
+* ⚡ Managing long-running game server processes
+* 🔁 Handling restart loops and crash recovery signals
+* 📊 Reporting runtime state (online/offline/error)
 
-```http
-Authorization: Bearer <token>
+---
+
+## 🧱 System Position
+
+```text
+Frontend (Vue)
+      ↓
+Rust Backend (Orchestrator)
+      ↓
+Daemon (this service)
+      ↓
+Docker Engine / OS Process Layer
+      ↓
+Game Server Instance
 ```
 
-### `POST /containers/create`
+### Key idea:
 
-Creates a managed container but does not start it.
+The backend does **not directly execute OS-level actions**.
 
-```json
-{
-  "server_id": "00000000-0000-0000-0000-000000000001",
-  "name": "alpha",
-  "game_kind": "minecraft",
-  "allocated_port": 25565,
-  "memory_limit_mb": 2048,
-  "cpu_limit_percent": 200
-}
-```
+Instead, it delegates sensitive runtime operations to this daemon for:
 
-### `POST /containers/start`
-### `POST /containers/stop`
-### `POST /containers/restart`
+* security isolation
+* reduced privilege exposure
+* local execution control
 
-```json
-{
-  "container_id": "1f2e3d4c5b6a"
-}
-```
+---
 
-### `GET /containers/:id/status`
+## ⚙️ Core Responsibilities
 
-`id` can be the tracked `server_id` or the managed `container_id`.
+### 🎮 Server Execution Control
 
-### `GET /containers/:id/logs?tail=200`
+* Start game server processes or containers
+* Stop running instances safely
+* Restart servers on demand or failure
 
-`id` can be the tracked `server_id` or the managed `container_id`.
+---
 
-## Run
+### 📡 Log Streaming
 
-```bash
-cargo run --release
-```
+* Capture stdout/stderr from game servers
+* Stream logs back to backend in real-time
+* Maintain structured log channels per server instance
 
-## Deployment
+---
 
-Use the included systemd unit template at `deploy/game-host-daemon.service` with an environment file such as `deploy/game-host-daemon.env.example`.
+### 🔄 Lifecycle Monitoring
+
+* Detect crashed or stopped servers
+* Report status changes to backend
+* Optional automatic recovery triggers
+
+---
+
+### 🐳 Docker / Process Integration
+
+Depending on configuration, daemon may:
+
+* Execute Docker CLI commands
+* Or interact via backend-provided instructions
+* Or manage local process execution directly
+
+---
+
+## 📡 Communication Model
+
+The daemon communicates with the backend using a **network-based control channel** (likely HTTP/WebSocket or similar async transport).
+
+### Typical flow:
+
+1. Backend sends command:
+
+   * `start server X`
+   * `stop server Y`
+
+2. Daemon executes locally:
+
+   * spawns process or Docker container
+
+3. Daemon streams updates:
+
+   * logs
+   * status changes
+   * errors
+
+4. Backend forwards updates to frontend UI
+
+---
+
+## 🧠 Design Principles
+
+### ⚡ 1. Minimal & lightweight runtime agent
+
+* no heavy business logic
+* no orchestration decisions
+* purely execution-focused
+
+---
+
+### 🔐 2. Privilege isolation
+
+* daemon runs with limited required permissions
+* backend handles authentication & authorization
+* daemon trusts backend commands but does not decide them
+
+---
+
+### 📡 3. Event-driven execution
+
+* command → execute → stream result
+* no polling loops where possible
+* reactive lifecycle updates
+
+---
+
+### 🧩 4. Host-level abstraction
+
+* abstracts OS-level execution details
+* hides Docker/process complexity from backend
+
+---
+
+## 🚀 Runtime Behavior
+
+At startup, the daemon typically:
+
+1. Initializes communication channel with backend
+2. Registers itself as available execution node
+3. Waits for incoming commands
+4. Spawns async task handlers for:
+
+   * execution
+   * logging
+   * state updates
+
+---
+
+## 📊 Responsibilities vs Backend
+
+| Feature                | Backend       | Daemon   |
+| ---------------------- | ------------- | -------- |
+| Authentication         | ✅             | ❌        |
+| Decision making        | ✅             | ❌        |
+| Server lifecycle logic | ✅             | ❌        |
+| Process execution      | ❌             | ✅        |
+| Log streaming          | ⚠ aggregation | ✅ source |
+| Docker control         | delegated     | optional |
+
+---
+
+## 🧪 Reliability Considerations
+
+Because this service controls live game servers:
+
+* must handle unexpected process termination
+* must recover from network disconnects
+* must not block on long-running tasks
+* must isolate per-server execution state
+
+---
+
+## 📌 Notes
+
+* This daemon is part of a **multi-layer orchestration architecture**
+* It is not intended to be used standalone
+* Designed for Linux-first deployment environments
+* Works in combination with Rust backend + Docker runtime
+
+---
+
+## 🧠 Summary
+
+The daemon is a **minimal Rust execution agent** that:
+
+> turns backend orchestration commands into real system-level actions and streams results back in real time.
+
+It is the final execution layer in the GameServerManager stack.
