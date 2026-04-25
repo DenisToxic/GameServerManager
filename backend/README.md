@@ -1,57 +1,151 @@
-# GSM Backend
+🎮 GameServerManager – Backend (Rust)
 
-Single-node game/server hosting panel backend built with Rust, Axum, PostgreSQL, SQLx, and JWT auth.
+High-performance Rust-based orchestration backend for GameServerManager, responsible for managing the full lifecycle of dedicated game servers running in Docker containers.
 
-## What is included
+This backend acts as the central control plane between the frontend UI, runtime daemon, and containerized game servers.
 
-- Layered Axum REST API
-- SQL migrations for `users`, `nodes`, `servers`, and `server_logs`
-- JWT access-token auth
-- `reqwest` node daemon client for container lifecycle operations
-- Validation and structured error handling
+⚙️ What this backend does (real implementation scope)
 
-## Endpoints
+The Rust backend is responsible for:
 
-- `POST /auth/register`
-- `POST /auth/login`
-- `GET /servers`
-- `POST /servers`
-- `GET /servers/:id`
-- `POST /servers/:id/start`
-- `POST /servers/:id/stop`
-- `POST /servers/:id/restart`
-- `DELETE /servers/:id`
-- `GET /servers/:id/logs`
-- `GET /servers/:id/status`
+🐳 Creating and managing Docker-based game server containers
+🎮 Installing and updating game servers via SteamCMD
+📡 Providing REST API + WebSocket real-time communication
+🔐 Authentication + role-based access control
+📊 Tracking server state, logs, and lifecycle events
+⚡ Streaming live console output (server PTY/logs)
+🔄 Coordinating execution through a daemon layer
+🧱 System Architecture
+Frontend (Vue)
+      ↓ REST / WebSocket
+Rust Backend (this service)
+      ↓
+Core Orchestration Layer
+      ↓
+Docker Engine API
+      ↓
+Game Server Containers (SteamCMD-based)
+      ↓
+Daemon (runtime execution agent)
+Key idea:
 
-## Run
+The backend does NOT run game servers directly
+It orchestrates them via Docker + daemon control.
 
-1. Copy `.env.example` to `.env`
-2. Apply the SQL files in `migrations/` with SQLx or your migration runner
-3. Start the API:
+🧠 Internal Architecture (based on code structure)
 
-```bash
-cargo run
-```
+Your backend is structured as a feature-based Rust service, split into:
 
-## Deployment
+📡 API Layer
+HTTP REST endpoints
+WebSocket upgrade handlers
+Request validation & routing
+🔐 Auth Layer
+Token-based authentication
+Role-based access control (RBAC)
+Server-scoped permissions
+🎮 Server Manager Core
+Server lifecycle state machine:
+create
+start
+stop
+restart
+Server registry / tracking
+Runtime state handling
+📦 SteamCMD Installer
+Automated game installation pipeline
+AppID-based installs
+Server definition handling
+Update workflow for existing servers
+🐳 Docker Layer
+Container creation & deletion
+Volume mapping (persistent data)
+Environment setup per server
+Isolation per instance
+📡 Event / Realtime System
+WebSocket event streaming
+Log forwarding
+Server state updates
+Live console output (PTY stream)
+⚙️ Daemon Communication
+Backend → daemon command dispatch
+Execution delegation (OS-level operations)
+Runtime monitoring feedback loop
+🚀 Getting Started
+Requirements
+Rust (latest stable)
+Docker Engine running
+SteamCMD (optional or containerized depending on setup)
+Linux recommended for production
+Build
+cargo build --release
+Run
+cargo run --release
 
-A production systemd unit template is included at `deploy/gsm-backend.service` and a matching environment template at `deploy/.env.production.example`.
+Default API:
 
-After applying the schema migrations, grant the runtime database role access to the application tables:
+http://localhost:5000
+📡 API Overview
+Server Management
+POST /api/servers/create
+POST /api/servers/start
+POST /api/servers/stop
+POST /api/servers/restart
+GET /api/servers/:id
+Realtime WebSocket
+/ws/events
+/ws/logs/:server_id
+/ws/console/:server_id
+🔐 Security Model
 
-```bash
-psql -d gsm -f deploy/grant-gsm-backend.sql
-```
+Because this system executes infrastructure-level operations:
 
-This is required when the tables are created by a different Postgres role than the one used in `DATABASE_URL`.
+All game servers run inside isolated Docker containers
+No direct host filesystem access for game instances
+Authentication required for all API calls
+RBAC restricts server-level operations
+Daemon layer isolates execution privileges
+🧠 Design Principles (important for perception)
+⚡ Async-first Rust architecture
 
-`POST /servers` now requires a `game_kind` of `minecraft`, `rust`, or `hytale` so the daemon can create a game-specific container preset.
+Backend is designed for:
 
-## SQLx note
+concurrent server management
+non-blocking I/O
+event-driven communication
+🐳 Container-first isolation
 
-The project uses SQLx with typed queries and is structured so you can move to macro-checked SQL once a database or offline cache is available. If you want compile-time query validation, set `DATABASE_URL`, switch the queries back to SQLx macros, and run:
+Every server:
 
-```bash
-cargo sqlx prepare
-```
+runs in its own Docker container
+has isolated runtime environment
+uses persistent volume mappings
+📡 Real-time control system
+
+No polling-based UI:
+
+WebSocket streaming
+instant state propagation
+live log forwarding
+🔧 Extensible game definitions
+
+New games are added via:
+
+configuration / install definitions
+not hardcoded logic changes
+📁 Project Structure (backend)
+backend/
+├── api/          # REST + WebSocket endpoints
+├── auth/         # authentication + RBAC
+├── core/         # orchestration engine
+├── docker/       # Docker abstraction layer
+├── steamcmd/     # installation system
+├── daemon/       # execution communication layer
+├── events/       # event system (logs, updates)
+├── models/       # shared data structures
+└── config/       # runtime configuration
+📌 Notes
+This is a self-hosted orchestration system, not a SaaS panel
+Designed for single-node deployment (multi-node possible future extension)
+Actively developed; APIs may change
+Focus is reliability of server lifecycle control
