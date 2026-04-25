@@ -1,0 +1,17 @@
+[Unit]
+Description=GSM Backend API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gsm
+Group=gsm
+WorkingDirectory=/opt/gsm-backend/current
+EnvironmentFile=/etc/gsm-backend.env
+ExecStart=/opt/gsm-backend/current/gsm-backend
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
